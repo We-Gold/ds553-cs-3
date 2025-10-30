@@ -7,12 +7,25 @@ load_dotenv()
 
 import gradio as gr
 from huggingface_hub import InferenceClient
+from prometheus_client import start_http_server, Counter, Summary
 
 from typing import Optional
 
 USE_LOCAL_TOKEN = True
 
 LOCAL_AUDIO_FILE = "./input.wav"
+
+# Prometheus metrics
+REQUEST_COUNTER = Counter('app_requests_total', 'Total number of requests')
+SUCCESSFUL_REQUESTS = Counter('app_successful_requests_total', 'Total number of successful requests')
+FAILED_REQUESTS = Counter('app_failed_requests_total', 'Total number of failed requests')
+HAIKU_REQUESTS = Counter('app_haiku_requests_total', 'Total number of haiku requests')
+RAP_REQUESTS = Counter('app_rap_requests_total', 'Total number of rap requests')
+ROAST_REQUESTS = Counter('app_roast_requests_total', 'Total number of roast requests')
+BRAINROT_REQUESTS = Counter('app_brainrot_requests_total', 'Total number of brainrot requests')
+REQUEST_DURATION = Summary('app_request_duration_seconds', 'Time spent processing request')
+SPEECH_TO_TEXT_DURATION = Summary('app_speech_to_text_duration_seconds', 'Time spent in speech to text conversion')
+TEXT_GENERATION_DURATION = Summary('app_text_generation_duration_seconds', 'Time spent in text generation')
 
 
 def load_whisper_model():
@@ -30,6 +43,7 @@ def load_audio_file(file):
     
 def build_message_prompt(text, mode):
     if mode == "Haiku":
+        HAIKU_REQUESTS.inc()
         system_message = f"""Generate a haiku based on the given text.
         A haiku is a short, Japanese poem typically with three lines. 
         It follows a structure of 5 syllables in the first line, 7 in the second, and 5 in the third, 
@@ -37,16 +51,19 @@ def build_message_prompt(text, mode):
         Please respond with only the haiku and no additional text. 
         """
     elif mode == "Rap":
+        RAP_REQUESTS.inc()
         system_message = f"""Generate a short rap based on the given text.
         A rap is a rhythmic and rhyming speech that often tells a story or conveys a message.
         Please respond with only the rap and no additional text.
         """
     elif mode == "Roast":
+        ROAST_REQUESTS.inc()
         system_message = f"""Generate a roast based on the given text.
         A roast is a humorous and often exaggerated insult or critique, typically delivered in a light-hearted manner.
         Please respond with only the roast and no additional text.
         """
     elif mode == "Brainrot":
+        BRAINROT_REQUESTS.inc()
         system_message = f"""Generate a brainrot based on the given text.
         Brainrot consists of poor-quality, humorous and absurd writing that often involves nonsensical use of content about
         2023-2025 Internet slang terms such as 6-7, negative aura, crashout, mogging, gyatt, sigma, skibidi, and rizz.
@@ -59,47 +76,66 @@ def build_message_prompt(text, mode):
     return messages
 
 def respond(file, mode, hf_token: Optional[gr.OAuthToken] = None):
-    global pipe
+    REQUEST_COUNTER.inc()  
+    request_timer = REQUEST_DURATION.time() 
 
-    input_sound = load_audio_file(file)
+    try: 
+        global pipe
 
-    # Save audio file in wav format (which is compatible with whisper)
-    input_sound.export(LOCAL_AUDIO_FILE, format="wav")
+        input_sound = load_audio_file(file)
 
-    if pipe is None:
-        pipe = load_whisper_model()
+        # Save audio file in wav format (which is compatible with whisper)
+        input_sound.export(LOCAL_AUDIO_FILE, format="wav")
 
-    # Convert the audio to text with the whisper tiny model
-    response = pipe(LOCAL_AUDIO_FILE)
-    text_result = response["text"]
+        if pipe is None:
+            pipe = load_whisper_model()
 
-    messages = build_message_prompt(text_result, mode)
+        # Convert the audio to text with the whisper tiny model
+        speech_to_text_timer = SPEECH_TO_TEXT_DURATION.time()
+        response = pipe(LOCAL_AUDIO_FILE)
+        speech_to_text_timer.observe_duration()
+        text_result = response["text"]
 
-    if USE_LOCAL_TOKEN:
-        import os
-        hf_token = {}
-        token = os.getenv("HF_TOKEN")
-    elif hf_token is None or not getattr(hf_token, "token", None):
-        yield "⚠️ Please log in with your Hugging Face account first."
+        messages = build_message_prompt(text_result, mode)
+
+        if USE_LOCAL_TOKEN:
+            import os
+            hf_token = {}
+            token = os.getenv("HF_TOKEN")
+        elif hf_token is None or not getattr(hf_token, "token", None):
+            yield "⚠️ Please log in with your Hugging Face account first."
+            return
+        else:
+            token = hf_token.token
+        
+        client = InferenceClient(token=token, model="openai/gpt-oss-20b")
+
+        response = ""
+
+        # Start timing text generation
+        text_generation_timer = TEXT_GENERATION_DURATION.time()
+
+        # Generate text with streaming
+        for chunk in client.chat_completion(
+            messages,
+            stream=True
+        ):
+            choices = chunk.choices
+            token = ""
+            if len(choices) and choices[0].delta.content:
+                token = choices[0].delta.content
+            response += token
+
+            yield response
+
+        text_generation_timer.observe_duration()
+        SUCCESSFUL_REQUESTS.inc()
+    except Exception as e:
+        FAILED_REQUESTS.inc()
+        yield f"⚠️ An error occurred: {str(e)}"
         return
-    else:
-        token = hf_token.token
-    
-    client = InferenceClient(token=token, model="openai/gpt-oss-20b")
-
-    response = ""
-
-    for chunk in client.chat_completion(
-        messages,
-        stream=True
-    ):
-        choices = chunk.choices
-        token = ""
-        if len(choices) and choices[0].delta.content:
-            token = choices[0].delta.content
-        response += token
-
-        yield response
+    finally:
+        request_timer.observe_duration()
     
 # Fancy styling
 CSS = """
@@ -162,4 +198,5 @@ with gr.Blocks(css=CSS) as demo:
   
 
 if __name__ == "__main__":
+    start_http_server(8000)  # Expose metrics on port 8000
     demo.launch()

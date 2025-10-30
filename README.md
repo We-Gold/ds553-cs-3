@@ -16,6 +16,9 @@ hf_oauth_scopes:
 
 ## Running Locally
 
+Run with Docker Compose:
+`docker-compose up --build`
+
 Easier running:
 
 - `pip install -r requirements.txt`

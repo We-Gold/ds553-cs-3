@@ -14,6 +14,10 @@ hf_oauth_scopes:
 - inference-api
 ---
 
+## Ngrok URL
+
+https://filmlike-ungaudily-salvador.ngrok-free.dev/
+
 ## Running Locally
 
 Run with Docker Compose:

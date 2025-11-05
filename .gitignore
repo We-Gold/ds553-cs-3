@@ -10,3 +10,7 @@ __pycache__/
 input.wav
 tmp/
 venv/
+
+log.txt
+ngrok.log
+ngrok.pid

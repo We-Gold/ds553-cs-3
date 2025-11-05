@@ -1,0 +1,44 @@
+services:
+  well-versed-ai-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3333:7860"
+    networks:
+      - monitoring
+  ngrok:
+    depends_on:
+      - well-versed-ai-app
+    image: ngrok/ngrok:latest
+    restart: unless-stopped
+    command:
+      - "http"
+      - "http://host.docker.internal:3333"
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    ports:
+      - 3335:4040
+  # prometheus:
+  #   depends_on:
+  #     - well-versed-ai-app
+  #   build:
+  #     context: ./Prometheus
+  #     dockerfile: Dockerfile
+  #   networks:
+  #     - monitoring
+  # grafana:
+  #   depends_on:
+  #     - prometheus
+  #   build:
+  #     context: ./Grafana
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "3334:3000"
+  #   networks:
+  #     - monitoring
+
+networks:
+  monitoring: 
+    external: true
+    name: monitoring

@@ -7,24 +7,24 @@ services:
       - "3333:7860"
     networks:
       - monitoring
-  # prometheus:
-  #   depends_on:
-  #     - well-versed-ai-app
-  #   build:
-  #     context: ./Prometheus
-  #     dockerfile: Dockerfile
-  #   networks:
-  #     - monitoring
-  # grafana:
-  #   depends_on:
-  #     - prometheus
-  #   build:
-  #     context: ./Grafana
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "3334:3000"
-  #   networks:
-  #     - monitoring
+  prometheus:
+    depends_on:
+      - well-versed-ai-app
+    build:
+      context: ./Prometheus
+      dockerfile: Dockerfile
+    networks:
+      - monitoring
+  grafana:
+    depends_on:
+      - prometheus
+    build:
+      context: ./Grafana
+      dockerfile: Dockerfile
+    ports:
+      - "3334:3000"
+    networks:
+      - monitoring
 
 networks:
   monitoring: 

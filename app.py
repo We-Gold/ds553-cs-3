@@ -77,65 +77,59 @@ def build_message_prompt(text, mode):
 
 def respond(file, mode, hf_token: Optional[gr.OAuthToken] = None):
     REQUEST_COUNTER.inc()  
-    request_timer = REQUEST_DURATION.time() 
+    with REQUEST_DURATION.time():
+        try: 
+            global pipe
 
-    try: 
-        global pipe
+            input_sound = load_audio_file(file)
 
-        input_sound = load_audio_file(file)
+            # Save audio file in wav format (which is compatible with whisper)
+            input_sound.export(LOCAL_AUDIO_FILE, format="wav")
 
-        # Save audio file in wav format (which is compatible with whisper)
-        input_sound.export(LOCAL_AUDIO_FILE, format="wav")
+            if pipe is None:
+                pipe = load_whisper_model()
 
-        if pipe is None:
-            pipe = load_whisper_model()
+            # Convert the audio to text with the whisper tiny model
+            with SPEECH_TO_TEXT_DURATION.time():
+                response = pipe(LOCAL_AUDIO_FILE)
 
-        # Convert the audio to text with the whisper tiny model
-        speech_to_text_timer = SPEECH_TO_TEXT_DURATION.time()
-        response = pipe(LOCAL_AUDIO_FILE)
-        speech_to_text_timer.observe_duration()
-        text_result = response["text"]
+            text_result = response["text"]
 
-        messages = build_message_prompt(text_result, mode)
+            messages = build_message_prompt(text_result, mode)
 
-        if USE_LOCAL_TOKEN:
-            import os
-            hf_token = {}
-            token = os.getenv("HF_TOKEN")
-        elif hf_token is None or not getattr(hf_token, "token", None):
-            yield "⚠️ Please log in with your Hugging Face account first."
+            if USE_LOCAL_TOKEN:
+                import os
+                hf_token = {}
+                token = os.getenv("HF_TOKEN")
+            elif hf_token is None or not getattr(hf_token, "token", None):
+                yield "⚠️ Please log in with your Hugging Face account first."
+                return
+            else:
+                token = hf_token.token
+            
+            client = InferenceClient(token=token, model="openai/gpt-oss-20b")
+
+            response = ""
+
+            # Generate text with streaming
+            with TEXT_GENERATION_DURATION.time():
+                for chunk in client.chat_completion(
+                    messages,
+                    stream=True
+                ):
+                    choices = chunk.choices
+                    token = ""
+                    if len(choices) and choices[0].delta.content:
+                        token = choices[0].delta.content
+                    response += token
+
+                    yield response
+
+            SUCCESSFUL_REQUESTS.inc()
+        except Exception as e:
+            FAILED_REQUESTS.inc()
+            yield f"⚠️ An error occurred: {str(e)}"
             return
-        else:
-            token = hf_token.token
-        
-        client = InferenceClient(token=token, model="openai/gpt-oss-20b")
-
-        response = ""
-
-        # Start timing text generation
-        text_generation_timer = TEXT_GENERATION_DURATION.time()
-
-        # Generate text with streaming
-        for chunk in client.chat_completion(
-            messages,
-            stream=True
-        ):
-            choices = chunk.choices
-            token = ""
-            if len(choices) and choices[0].delta.content:
-                token = choices[0].delta.content
-            response += token
-
-            yield response
-
-        text_generation_timer.observe_duration()
-        SUCCESSFUL_REQUESTS.inc()
-    except Exception as e:
-        FAILED_REQUESTS.inc()
-        yield f"⚠️ An error occurred: {str(e)}"
-        return
-    finally:
-        request_timer.observe_duration()
     
 # Fancy styling
 CSS = """

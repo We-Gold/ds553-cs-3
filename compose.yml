@@ -13,6 +13,8 @@ services:
     build:
       context: ./Prometheus
       dockerfile: Dockerfile
+    ports:
+      - "3334:9090"
     networks:
       - monitoring
   grafana:
@@ -22,7 +24,7 @@ services:
       context: ./Grafana
       dockerfile: Dockerfile
     ports:
-      - "3334:3000"
+      - "3335:3000"
     networks:
       - monitoring
 

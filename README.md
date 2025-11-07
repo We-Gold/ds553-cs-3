@@ -18,6 +18,11 @@ hf_oauth_scopes:
 
 https://filmlike-ungaudily-salvador.ngrok-free.dev/
 
+Grafana: https://choregraphically-unvendable-brendan.ngrok-free.dev/
+
+## Running Docker on Server
+`docker-compose down`, then `docker-compose up -d`
+
 ## Running Locally
 
 Run with Docker Compose:
